@@ -1,0 +1,4 @@
+{
+    "appService.defaultWebAppToDeploy": "/subscriptions/ada92f23-1204-486b-bcd9-e47e47787452/resourceGroups/appsvc_windows_centralus/providers/Microsoft.Web/sites/mylochist",
+    "appService.deploySubpath": ""
+}
