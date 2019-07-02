@@ -7,6 +7,8 @@
 			blur: 15
 		};
 
+	var grid = codegrid.CodeGrid();
+
 	function status( message ) {
 		$( '#currentStatus' ).text( message );
 	}
@@ -70,14 +72,75 @@
 		var latlngs = [];
 
 		var os = new oboe();
+		var myLocList = {};
+		var countryList = {};
+		var yearList = {};
+
+		var getDayOfYear = (date) => {
+			var start = new Date(date.getFullYear(), 0, 0);
+			var diff = (date - start) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+			var oneDay = 1000 * 60 * 60 * 24;
+			var day = Math.floor(diff / oneDay);
+			return day;
+		}
+
+		var myProccessFunc = (key, date, lat, lon) => {
+			grid.getCode(lat, lon, (error, code) => { 
+				if (!(code in myLocList[key].countries)) {
+					myLocList[key].countries[code] = true;
+						
+					if (!(date.getFullYear() in yearList)) {
+						yearList[date.getFullYear()] = {count:0};
+					}
+					var dayOfYear = getDayOfYear(date);
+					if (!(dayOfYear in yearList[date.getFullYear()])) {
+						yearList[date.getFullYear()][dayOfYear] = true;
+						yearList[date.getFullYear()].count++;
+					}
+
+					if (!(code in countryList)) {
+						countryList[code] = {count: 0};
+					}
+					var c = countryList[code];
+
+					if (!(date.getFullYear() in c)) {
+						c[date.getFullYear()] = { count: 0, days: {}};
+					}
+					var y = c[date.getFullYear()];
+
+					if (!(date.getMonth() in y)) {
+						y[date.getMonth()] = { count: 0};
+					}
+					var m = y[date.getMonth()];
+
+					if (!(date.getDate() in m)) {
+						m[date.getDate()] = true;
+						m.count++;
+						y.count++;
+						c.count++;
+					}
+				}
+			});
+		}
 
 		os.node( 'locations.*', function ( location ) {
 			var latitude = location.latitudeE7 * SCALAR_E7,
-				longitude = location.longitudeE7 * SCALAR_E7;
+				longitude = location.longitudeE7 * SCALAR_E7,
+				date = new Date(Number(location.timestampMs));
 
 			// Handle negative latlngs due to google unsigned/signed integer bug.
 			if ( latitude > 180 ) latitude = latitude - (2 ** 32) * SCALAR_E7;
 			if ( longitude > 180 ) longitude = longitude - (2 ** 32) * SCALAR_E7;
+			
+			f = (n) => { if ( n >= 10) return n.toString(); else return "0" + n.toString() }
+
+			var dateKey = date.getFullYear() + "-" + f(date.getMonth()) + "-" + f(date.getDate());
+
+			if (!(dateKey in myLocList)) {
+				myLocList[dateKey] = { countries: {} };			
+			}
+
+			myProccessFunc(dateKey, date, latitude, longitude);
 
 			if ( type === 'json' ) latlngs.push( [ latitude, longitude ] );
 			return oboe.drop;
@@ -86,6 +149,50 @@
 			heat._latlngs = latlngs;
 
 			heat.redraw();
+			console.log(myLocList);
+			console.log(countryList);
+			console.log(yearList);
+
+			var yearCountryList = {}
+			Object.keys(countryList).forEach( (keyCountry) => {
+				Object.keys(countryList[keyCountry]).forEach( (keyYear) => {
+					if (keyYear === 'count') {
+						console.log("Days spent in " + keyCountry + " in total: " + countryList[keyCountry].count);
+						return;
+					}
+
+					if (!(keyYear in yearCountryList)) {
+						yearCountryList[keyYear] = {}
+					}
+
+					yearCountryList[keyYear][keyCountry] = countryList[keyCountry][keyYear].count;
+				})
+			})
+			
+			var dateFromDay = (year, day) => {
+				var date = new Date(year, 0); // initialize a date in `year-01-01`
+				return new Date(date.setDate(day)); // add the number of days
+			}
+
+			Object.keys(yearCountryList).forEach( (keyYear) => {
+				Object.keys(yearCountryList[keyYear]).forEach( (keyCountry) => {
+					console.log("Days spent in " + keyCountry + " in " + keyYear + ": " + yearCountryList[keyYear][keyCountry]);
+				});
+				
+				var totalDays = 365 + (keyYear % 4 == 0 ? 1 : 0);
+				var today = new Date(Date.now());
+				totalDays = keyYear == today.getFullYear() ? getDayOfYear(today) : totalDays;
+
+				console.log("Filled days in " + keyYear + ": " + yearList[keyYear].count);
+				console.log("Missing days in " + keyYear + ": " + (totalDays - yearList[keyYear].count));
+				for (var i = 1; i <= totalDays; ++i) {
+					if (!(i in yearList[keyYear])) {
+						console.log("Missing day in " + keyYear + ": " + dateFromDay(keyYear, i));
+					}
+				}
+
+				console.log("-----------------")
+			})
 			stageThree(  /* numberProcessed */ latlngs.length );
 
 		} );
@@ -114,20 +221,9 @@
 		$( '#numberProcessed' ).text( numberProcessed.toLocaleString() );
 
     $( '#launch' ).click( function () {
-      var $email = $( '#email' );
-      if ( $email.is( ':valid' ) ) {
-        $( this ).text( 'Launching... ' );
-        $.post( '/heatmap/submit-email.php', {
-          email: $email.val()
-        } )
-        .always( function () {
-          $( 'body' ).addClass( 'map-active' );
-          $done.fadeOut();
-          activateControls();
-        } );
-      } else {
-        alert( 'Please enter a valid email address to proceed.' );
-      }
+		$( 'body' ).addClass( 'map-active' );
+		$done.fadeOut();
+		activateControls();
     } );
 
 		function activateControls () {
@@ -242,10 +338,15 @@
 		reader.readAsText( file );
 	}
 
+	var locationsv2 = [];
+
 	function getLocationDataFromKml( data ) {
 		var KML_DATA_REGEXP = /<when>( .*? )<\/when>\s*<gx:coord>( \S* )\s( \S* )\s( \S* )<\/gx:coord>/g,
 			locations = [],
 			match = KML_DATA_REGEXP.exec( data );
+
+
+		locationsv2 = [];
 
 		// match
 		//  [ 1 ] ISO 8601 timestamp
@@ -254,8 +355,13 @@
 		//  [ 4 ] altitude ( not currently provided by Location History )
 		while ( match !== null ) {
 			locations.push( [ Number( match[ 3 ] ), Number( match[ 2 ] ) ] );
+			locationsv2.push({ date: new Date(match[1]), lat: Number(match[3]), lon: Number(match[2])});
+			
 			match = KML_DATA_REGEXP.exec( data );
 		}
+		
+		alert(locationsv2[0]);
+		$('#myMap').text(locationsv2[0]);
 
 		return locations;
 	}
