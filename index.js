@@ -46,7 +46,6 @@
 
 	function stageTwo ( file ) {
     // Google Analytics event - heatmap upload file
-    ga('send', 'event', 'Heatmap', 'upload', undefined, file.size);
 
 		heat = L.heatLayer( [], heatOptions ).addTo( map );
 
@@ -207,8 +206,7 @@
 	}
 
 	function stageThree ( numberProcessed ) {
-    // Google Analytics event - heatmap render
-    ga('send', 'event', 'Heatmap', 'render', undefined, numberProcessed);
+		// Google Analytics event - heatmap render
 
 		var $done = $( '#done' );
 
@@ -220,11 +218,9 @@
 		// Update count
 		$( '#numberProcessed' ).text( numberProcessed.toLocaleString() );
 
-    $( '#launch' ).click( function () {
 		$( 'body' ).addClass( 'map-active' );
 		$done.fadeOut();
 		activateControls();
-    } );
 
 		function activateControls () {
 			var $tileLayer = $( '.leaflet-tile-pane' ),
@@ -359,9 +355,6 @@
 			
 			match = KML_DATA_REGEXP.exec( data );
 		}
-		
-		alert(locationsv2[0]);
-		$('#myMap').text(locationsv2[0]);
 
 		return locations;
 	}
